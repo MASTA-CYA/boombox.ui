@@ -1,0 +1,4 @@
+enum PlaylistMode {
+  reorder,
+  simple,
+}
