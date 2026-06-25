@@ -111,8 +111,8 @@ class _PlayerPlaylistSongViewWidget
           ? const SizedBox.shrink()
           : const Divider(
               thickness: 1,
-              indent: 16,
-              endIndent: 16,
+              indent: 10,
+              endIndent: 10,
             ),
     ];
   }

@@ -26,37 +26,38 @@ class _AlbumViewWidget extends State<AlbumViewWidget> {
       shrinkWrap: true,
       scrollDirection: Axis.vertical,
       itemCount: widget.albums.length,
-      itemBuilder: (context, index) => Column(
-        children: [
-          ListTile(
-            leading: ClipRRect(
-              child: widget.albums.elementAt(index).art.isEmpty
-                  ? Image.asset('assets/images/album.png')
-                  : Image.memory(widget.albums.elementAt(index).art),
-            ),
-            title: Text(widget.albums.elementAt(index).name),
-            subtitle: Text(
-              widget.albums.elementAt(index).artist,
-              style: Theme.of(context).textTheme.bodyMedium?.merge(
+      itemBuilder:
+          (context, index) => Column(
+            children: [
+              ListTile(
+                leading: ClipRRect(
+                  child:
+                      widget.albums.elementAt(index).art.isEmpty
+                          ? Image.asset(
+                            'assets/images/album.png',
+                            color: Theme.of(context).iconTheme.color,
+                          )
+                          : Image.memory(widget.albums.elementAt(index).art),
+                ),
+                title: Text(widget.albums.elementAt(index).name),
+                subtitle: Text(
+                  widget.albums.elementAt(index).artist,
+                  style: Theme.of(context).textTheme.bodyMedium?.merge(
                     TextStyle(color: Theme.of(context).colorScheme.secondary),
                   ),
-            ),
-            trailing: TrailingCardWidget(
-              child: Text(
-                widget.albums.elementAt(index).tracks.toString(),
-                style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                trailing: TrailingCardWidget(
+                  child: Text(
+                    widget.albums.elementAt(index).tracks.toString(),
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
+                onTap: () => _onAlbumSelected(index),
               ),
-            ),
-            onTap: () => _onAlbumSelected(index),
+              if (index < widget.albums.length - 1)
+                const Divider(thickness: 1, indent: 10, endIndent: 10),
+            ],
           ),
-          if (index < widget.albums.length - 1)
-            const Divider(
-              thickness: 1,
-              indent: 16,
-              endIndent: 16,
-            ),
-        ],
-      ),
     );
   }
 

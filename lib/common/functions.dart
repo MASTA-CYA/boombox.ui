@@ -17,7 +17,7 @@ class Functions {
 
   static double horizontalScreenMargin(BuildContext context) {
     return MediaQuery.of(context).size.width <= DeviceSize.TABLET_SCREEN_WIDTH
-        ? 5
-        : 100;
+        ? 0
+        : 10;
   }
 }

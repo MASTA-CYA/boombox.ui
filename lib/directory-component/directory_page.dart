@@ -187,8 +187,8 @@ class _DirectoriesPage extends State<DirectoryPage> {
                         ),
                         const Divider(
                           thickness: 1,
-                          indent: 16,
-                          endIndent: 16,
+                            indent: 10,
+                            endIndent: 10,
                         ),
                       ],
                     );

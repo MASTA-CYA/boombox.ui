@@ -45,10 +45,7 @@ class _PlayingIconWidget extends State<PlayingIconWidget>
         final double end = Random().nextDouble();
 
         _scaleAnimations.add(
-          Tween(
-            begin: begin,
-            end: end,
-          ).animate(_controller),
+          Tween(begin: begin, end: end).animate(_controller),
         );
       }
     } else {
@@ -76,12 +73,10 @@ class _PlayingIconWidget extends State<PlayingIconWidget>
       ];
     }
 
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) {
-        _alignAnimation();
-        setState(() {});
-      },
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _alignAnimation();
+      setState(() {});
+    });
   }
 
   @override
@@ -94,8 +89,9 @@ class _PlayingIconWidget extends State<PlayingIconWidget>
   @override
   Widget build(BuildContext context) {
     return StreamBuilder(
-      stream: Provider.of<PlayerService>(context)
-          .getPlayerPlayingStateStream('POPUP'),
+      stream: Provider.of<PlayerService>(
+        context,
+      ).getPlayerPlayingStateStream('POPUP'),
       builder: (context, snapshot) {
         if (snapshot.hasData) _manageControllerState(snapshot.data!);
 
@@ -117,6 +113,13 @@ class _PlayingIconWidget extends State<PlayingIconWidget>
         decoration: BoxDecoration(
           color: _colorAnimation.value,
           borderRadius: BorderRadius.circular(2),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).colorScheme.primary,
+              blurRadius: 2,
+              offset: Offset.zero,
+            ),
+          ],
         ),
       ),
     );
@@ -124,9 +127,9 @@ class _PlayingIconWidget extends State<PlayingIconWidget>
 
   void _alignAnimation() {
     _colorAnimation = ColorTween(
-            begin: Theme.of(context).colorScheme.secondary,
-            end: Theme.of(context).colorScheme.primary)
-        .animate(_controller);
+      begin: Theme.of(context).colorScheme.secondary,
+      end: Theme.of(context).colorScheme.primary,
+    ).animate(_controller);
   }
 
   void _manageControllerState(bool isPlaying) {

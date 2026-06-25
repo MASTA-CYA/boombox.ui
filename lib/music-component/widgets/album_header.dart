@@ -1,3 +1,5 @@
+import 'package:animated_theme_switcher/animated_theme_switcher.dart';
+import 'package:boombox/commons_barrel.dart';
 import 'package:boombox/music-component/models/album_model.dart';
 import 'package:boombox/music-component/models/enums/download_action_enum.dart';
 import 'package:boombox/music-component/widgets/download_media_icon_widget.dart';
@@ -20,7 +22,8 @@ class AlbumHeaderWidget extends StatefulWidget {
 class _AlbumHeaderWidget extends State<AlbumHeaderWidget> {
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
+    return ThemeSwitchingArea(
+      child: ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 300),
       child: Card(
         margin: Theme.of(context).cardTheme.margin,
@@ -30,6 +33,7 @@ class _AlbumHeaderWidget extends State<AlbumHeaderWidget> {
             _buildNameAndDetails(),
           ],
         ),
+      ),
       ),
     );
   }
@@ -48,6 +52,9 @@ class _AlbumHeaderWidget extends State<AlbumHeaderWidget> {
                     ? Image.asset('assets/images/album.png').image
                     : Image.memory(widget.album.art).image,
                 fit: BoxFit.fill,
+                invertColors:
+                    widget.album.art.isEmpty &&
+                    Theme.of(context).brightness.equals(Brightness.dark),
               ),
             ),
           ),

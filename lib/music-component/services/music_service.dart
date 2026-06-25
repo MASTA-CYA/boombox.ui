@@ -34,8 +34,7 @@ import 'package:boombox/music-component/strategy/song_search_strategy.dart';
 import 'package:boombox/settings-component/services/user_settings_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-// import 'package:flutter_media_metadata/flutter_media_metadata.dart';
-import 'package:metadata_god/metadata_god.dart';
+import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 import 'package:mime/mime.dart';
 import 'package:intl/intl.dart';
 
@@ -83,10 +82,24 @@ class MusicService with ChangeNotifier {
     _artists = [];
 
     _isMappingStreamController = StreamController<MappingResult>.broadcast();
-    await ServiceBus().registerMessageQueueAsync(_MAPPING_STATUS);
-    await MetadataGod.initialize();
-    await _loadDirectoriesAsync();
-    await _loadLibrariesAsync();
+
+    try {
+      await ServiceBus().registerMessageQueueAsync(_MAPPING_STATUS);
+      await _loadDirectoriesAsync();
+      await _loadLibrariesAsync();
+    } on Exception catch (ex) {
+      await Logger.logAsync(
+        LogEvent<MusicService>(
+          severity: Severity.error,
+          tag: Tag.service,
+          line: ex.toString(),
+        ),
+      );
+      await _sendMappingNotificationAsync(
+        "Mapping failed",
+        MessageSeverity.alert,
+      );
+    }
   }
 
   Future<bool> isBusyMapping() async => _isBusyMapping;
@@ -118,25 +131,29 @@ class MusicService with ChangeNotifier {
 
     start = DateTime.now();
     _isBusyMapping = true;
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping started.',
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping started.',
+    // );
+    await _sendMappingNotificationAsync(
+      "Mapping started",
+      MessageSeverity.information,
     );
     await _mapAlbumsAsync();
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping albums done.',
-    );
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping albums done.',
+    // );
     await _mapSongsAsync();
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping songs done.',
-    );
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping songs done.',
+    // );
     await _mapArtistsAsync();
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping artists done.',
-    );
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping artists done.',
+    // );
     _isBusyMapping = false;
     end = DateTime.now();
 
@@ -370,7 +387,8 @@ class MusicService with ChangeNotifier {
         }
 
         // check for singles directory
-        isSingle = listing.path.split('/').last.equals('Singles');
+        final String folderName = listing.path.split('/').last;
+        isSingle = folderName.equals('Singles');
 
         // attempt to get cover image from directory
         cover = _getCoverFromDirectory(listing);
@@ -378,30 +396,34 @@ class MusicService with ChangeNotifier {
         // loop through files
         for (String file in listing.files) {
           if (_isFileImage(file) || !_isFileAudio(file)) continue;
-          // Metadata meta = await MetadataRetriever.fromFile(File(file));
-          Metadata meta = await MetadataGod.readMetadata(file: file);
+          Metadata meta = await MetadataRetriever.fromFile(File(file));
           // sanitize track name
-          String name = _sanitizeTrackName(
+          String trackName = _sanitizeTrackName(
             // meta.trackName ?? file.split('/').last,
-            meta.title ?? file.split('/').last,
+            meta.trackName ?? file.split('/').last,
             isSingle,
           );
-
           // get album info from first song
           if (songs.isEmpty) {
             // album name
-            // album = _sanitizeAlbumName(meta.albumName, meta.albumArtistName);
-            album = _sanitizeAlbumName(meta.album, meta.albumArtist);
+            album =
+                isSingle
+                    ? listing.path.split("/").last
+                    : _sanitizeAlbumName(
+                      meta.albumName,
+                      meta.albumArtistName,
+                      folderName,
+                    );
             // artist name
             artist = await _sanitizeArtistName(
               album,
-              name,
-              meta.albumArtist,
-              meta.album,
-              meta.artist,
+              trackName,
+              meta.albumArtistName,
+              meta.albumName,
+              meta.trackArtistNames?.first,
               isSingle,
             );
-            if (isSingle) artist = _getSingleTrackArtist(name);
+            if (isSingle) artist = _getSingleTrackArtist(trackName);
             // album art
             if (!isSingle) {
               art = await ImageStoreService.getImageAsync<Uint8List>(album);
@@ -409,7 +431,7 @@ class MusicService with ChangeNotifier {
             if (art.isNull) {
               art = await _prepareAlbumArtAsync(
                 cover,
-                meta.picture?.data,
+                meta.albumArt,
                 artist,
                 album,
                 isSingle,
@@ -421,16 +443,16 @@ class MusicService with ChangeNotifier {
 
           // track genre
           final String genre =
-              meta.genre ?? await _getTrackGenreAsync(name, artist);
+              meta.genre ?? await _getTrackGenreAsync(trackName, artist);
 
           songs.add(
             Song(
               id: songId,
               path: file,
               art: art!,
-              name: name,
+              name: trackName,
               artist: artist,
-              duration: meta.duration?.inSeconds ?? 0,
+              duration: meta.trackDuration ?? 0,
               yearReleased: meta.year ?? DateTime.now().year,
               genre: genre,
               dateAdded: File(file).statSync().changed.toIso8601String(),
@@ -484,8 +506,8 @@ class MusicService with ChangeNotifier {
 
   // ignore: unused_element
   Future<void> _mapOnlineAlbumsAsync() async {
-    List<Album> _onlineAlbums = await MediaStoreService().getAlbumsAsync();
-    _albums.addAll(_onlineAlbums);
+    List<Album> onlineAlbums = await MediaStoreService().getAlbumsAsync();
+    _albums.addAll(onlineAlbums);
   }
 
   Future<List<Artist>> getArtistsAsync(
@@ -608,7 +630,7 @@ class MusicService with ChangeNotifier {
   }
 
   bool _isFileAudio(String file) {
-    return file.contains(RegExp(r'.(mp3|wav|wma|amr|ogg|flac)$'));
+    return file.contains(RegExp(r'.(mp3|m4a|wav|wma|amr|ogg|flac)$'));
   }
 
   String _sanitizeTrackName(String trackName, bool isSingle) {
@@ -644,14 +666,21 @@ class MusicService with ChangeNotifier {
     return name.trim();
   }
 
-  String _sanitizeAlbumName(String? albumName, String? name) {
+  String _sanitizeAlbumName(
+    String? albumName,
+    String? name,
+    String alternativeName,
+  ) {
     String album = 'Unknown';
 
-    if (albumName.isNull) return album;
+    if (albumName.isNull && name.isNull) {
+      return alternativeName;
+    } else if (albumName.isNull) {
+      return album;
+    }
 
     if (albumName!.contains('Leakedzip.com')) {
-      if (name.isNull) return albumName;
-      album = name!;
+      album = name.isNull ? albumName : name!;
     } else {
       album = albumName;
     }
@@ -782,6 +811,21 @@ class MusicService with ChangeNotifier {
         notificationText: result,
         severity: severity,
       ),
+    );
+  }
+
+  Future _sendMappingNotificationAsync(
+    String text,
+    MessageSeverity severity,
+  ) async {
+    await MessageService().sendNotificationAsync(
+      AppNotification(
+        title: 'Mapping Update',
+        message: '',
+        notificationText: text,
+        severity: severity,
+      ),
+      saveAsMessage: false,
     );
   }
 

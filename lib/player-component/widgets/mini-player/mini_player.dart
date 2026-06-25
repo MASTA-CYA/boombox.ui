@@ -53,43 +53,25 @@ class _MiniPlayerWidget extends State<MiniPlayerWidget>
     );
     _seekbarController = AnimationController(
       vsync: this,
-      duration: const Duration(),
+      duration: Duration.zero,
     );
 
     _playerButtonAnimation = Tween<Offset>(
       begin: const Offset(1.0, 0.0),
       end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeIn,
-      ),
-    );
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
     _trackInfoAnimation = Tween<Offset>(
       begin: const Offset(-1.0, 0.0),
       end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeIn,
-      ),
-    );
-    _seekbarAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _seekbarController,
-        curve: Curves.easeIn,
-      ),
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
+    _seekbarAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(
+      CurvedAnimation(parent: _seekbarController, curve: Curves.easeIn),
     )..addListener(() => setState(() {}));
 
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) async {
-        await _controller.forward();
-        await _seekbarController.forward();
-      },
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _controller.forward();
+      await _seekbarController.forward();
+    });
   }
 
   @override
@@ -128,24 +110,26 @@ class _MiniPlayerWidget extends State<MiniPlayerWidget>
             leading: Hero(
               tag: 'ALBUM_ART',
               child: ClipRRect(
-                child: trackInfo.art!.isNotEmpty
-                    ? Image.memory(trackInfo.art!)
-                    : Image.asset('assets/images/cd.png'),
+                child:
+                    trackInfo.art!.isNotEmpty
+                        ? Image.memory(trackInfo.art!)
+                        : Image.asset('assets/images/cd.png'),
               ),
             ),
             title: Text(trackInfo.title!),
             subtitle: Text(
               trackInfo.artist!,
               style: Theme.of(context).textTheme.bodyMedium?.merge(
-                    TextStyle(color: Theme.of(context).colorScheme.secondary),
-                  ),
+                TextStyle(color: Theme.of(context).colorScheme.secondary),
+              ),
             ),
             trailing: IconButton(
               icon: const Icon(Icons.keyboard_arrow_up),
-              onPressed: () => _navigateTo(
-                const PlayerPage(),
-                direction: TransitionDirection.btt,
-              ),
+              onPressed:
+                  () => _navigateTo(
+                    const PlayerPage(),
+                    direction: TransitionDirection.btt,
+                  ),
             ),
           ),
         );
@@ -169,11 +153,9 @@ class _MiniPlayerWidget extends State<MiniPlayerWidget>
             duration: positionData?.duration ?? Duration.zero,
             position: positionData?.position ?? Duration.zero,
             bufferedPosition: positionData?.bufferedPosition ?? Duration.zero,
-            onValueChanged: (duration) =>
-                PlayerFunctionsHelper().onSeekBarPositionChangedAsync(
-              context,
-              duration,
-            ),
+            onValueChanged:
+                (duration) => PlayerFunctionsHelper()
+                    .onSeekBarPositionChangedAsync(context, duration),
           ),
         );
       },
@@ -185,20 +167,18 @@ class _MiniPlayerWidget extends State<MiniPlayerWidget>
       position: _playerButtonAnimation,
       child: PlayerButtonsWidget(
         sender: 'MINI',
-        onPlayerModeChanged: (mode) async =>
-            await PlayerFunctionsHelper().onPlayerModeChangedAsync(
-          context,
-          mode,
-        ),
-        onPreviousTrackPressed: () async =>
-            await PlayerFunctionsHelper().onPreviousTrackPressedAsync(context),
-        onPlayerStateChanged: (state) async =>
-            await PlayerFunctionsHelper().onPlayerStateChangedAsync(
-          context,
-          state,
-        ),
-        onNextTrackPressed: () async =>
-            await PlayerFunctionsHelper().onNextTrackPressedAsync(context),
+        onPlayerModeChanged:
+            (mode) async => await PlayerFunctionsHelper()
+                .onPlayerModeChangedAsync(context, mode),
+        onPreviousTrackPressed:
+            () async => await PlayerFunctionsHelper()
+                .onPreviousTrackPressedAsync(context),
+        onPlayerStateChanged:
+            (state) async => await PlayerFunctionsHelper()
+                .onPlayerStateChangedAsync(context, state),
+        onNextTrackPressed:
+            () async =>
+                await PlayerFunctionsHelper().onNextTrackPressedAsync(context),
         onPlaylistPressed: _onPlaylistPressed,
       ),
     );
@@ -209,15 +189,15 @@ class _MiniPlayerWidget extends State<MiniPlayerWidget>
       context,
       transitionController: _modalController,
       child: PlaylistModalWidget(
-        onPlaylistSongSelected: (isPlaying, path) async =>
-            await PlayerFunctionsHelper().onPlaylistSongSelectedAsync(
-          context,
-          isPlaying,
-          path,
-        ),
+        onPlaylistSongSelected:
+            (isPlaying, path) async => await PlayerFunctionsHelper()
+                .onPlaylistSongSelectedAsync(context, isPlaying, path),
         onPlaylistReordered: (songs) => _onPlaylistReordered(songs),
-        onPlaylistSweepPressed: (playlist) =>
-            PlaylistFunctionsHelper().onPlaylistSweepAsync(context, playlist),
+        onPlaylistSweepPressed:
+            (playlist) => PlaylistFunctionsHelper().onPlaylistSweepAsync(
+              context,
+              playlist,
+            ),
         onSavePlaylistPressed: (songs) => _onSavePlaylistPressed(songs),
       ),
     );

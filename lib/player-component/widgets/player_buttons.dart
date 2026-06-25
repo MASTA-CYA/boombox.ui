@@ -76,7 +76,7 @@ class _PlayerButtonsWidget extends State<PlayerButtonsWidget>
         if (snapshot.hasData && snapshot.data!.sequence.isNotEmpty) {
           hasPrevious = snapshot.data!.sequence.length > 1;
           hasNext =
-              snapshot.data!.currentIndex < snapshot.data!.sequence.length &&
+              snapshot.data!.currentIndex! < snapshot.data!.sequence.length &&
                   hasPrevious;
         }
 

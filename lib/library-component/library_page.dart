@@ -105,8 +105,7 @@ class _LibraryPage extends State<LibraryPage> {
         ),
         const Divider(
           thickness: 1,
-          indent: 20,
-          endIndent: 20,
+          indent: 10, endIndent: 10,
         ),
         ListTile(
           leading: const ImageIcon(
@@ -123,8 +122,7 @@ class _LibraryPage extends State<LibraryPage> {
         ),
         const Divider(
           thickness: 1,
-          indent: 20,
-          endIndent: 20,
+          indent: 10, endIndent: 10,
         ),
         ListTile(
           leading: const ImageIcon(
@@ -142,8 +140,7 @@ class _LibraryPage extends State<LibraryPage> {
         ),
         const Divider(
           thickness: 1,
-          indent: 20,
-          endIndent: 20,
+          indent: 10, endIndent: 10,
         ),
         ListTile(
           leading: const ImageIcon(
@@ -164,15 +161,20 @@ class _LibraryPage extends State<LibraryPage> {
 
   Widget _buildUserPreferredFeature() {
     return FutureBuilder(
-      future: Provider.of<UserSettingsService>(
+      future: Future.wait([Provider.of<UserSettingsService>(
         context,
         listen: false,
-      ).getCanShowApplicationFeaturesAsync(),
+      ).getCanShowApplicationFeaturesAsync(), Provider.of<PlayerService>(
+        context,
+        listen: false,
+      ).isPlayerConfiguredAsync()]),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
-          return snapshot.data!
-              ? _buildApplicationFeature(snapshot.data!)
-              : _buildMiniPlayer(snapshot.data!);
+          final bool canShowFeatures = snapshot.data![0];
+          final bool isPlayerConfigured = snapshot.data![1];
+          return canShowFeatures && isPlayerConfigured
+              ? _buildApplicationFeature(snapshot.data![0])
+              : _buildMiniPlayer(snapshot.data![0]);
         } else {
           return const SizedBox.shrink();
         }
