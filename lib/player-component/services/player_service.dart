@@ -11,11 +11,13 @@ import 'package:boombox/common/logger/logger.dart';
 import 'package:boombox/common/logger/models/log_event_model.dart';
 import 'package:boombox/common/service-bus/service_bus.dart';
 import 'package:boombox/common/services/application_lifecycle_service.dart';
+import 'package:boombox/common/services/file_storage_service.dart';
 import 'package:boombox/common/services/notification_service.dart';
 import 'package:boombox/music-component/music_barrel.dart';
 import 'package:boombox/player-component/audio-handlers/media_controls_handler.dart';
 import 'package:boombox/player-component/models/enums/player_mode_enum.dart';
 import 'package:boombox/player-component/models/position_data_model.dart';
+import 'package:boombox/player-component/models/streaming_audio_source.dart';
 import 'package:boombox/player-component/services/lyrics_service.dart';
 import 'package:boombox/playlist-component/models/playlist_song_model.dart';
 import 'package:boombox/settings-component/services/user_settings_service.dart';
@@ -26,6 +28,7 @@ import 'package:just_audio/just_audio.dart' as audio;
 // ignore: depend_on_referenced_packages
 import 'package:rxdart/rxdart.dart';
 import 'package:audio_decoder/audio_decoder.dart';
+import 'dart:io';
 
 class PlayerService with ChangeNotifier {
   final String _IS_PLAYING_QUEUE = '_IS_PLAYING_QUEUE';
@@ -35,7 +38,6 @@ class PlayerService with ChangeNotifier {
   // ignore: unused_field
   late AudioHandler _audioHandler;
   AudioSession? _audioSession;
-  late AudioDecoder _decoder;
 
   late bool _isConfigured;
   Playlist? _activePlaylist;
@@ -104,7 +106,6 @@ class PlayerService with ChangeNotifier {
     _isPlayingSubscribers = {};
     _isConfigured = false;
     _isMiniPlayerReady = false;
-    _decoder = AudioDecoder();
     _player = audio.AudioPlayer(
       // Handle audio_session events ourselves for the purpose of this demo.
       handleInterruptions: true,
@@ -331,8 +332,9 @@ class PlayerService with ChangeNotifier {
 
   Future<void> playAlbumAsync(List<Song> songs, int index) async {
     try {
+      await _removeFlacTempFilesAsync();
       await _player.setAudioSources(
-        _mapAudioSource(songs),
+        await _mapAudioSourceAsync(songs),
         initialIndex: index,
       );
       await _player.play();
@@ -344,6 +346,28 @@ class PlayerService with ChangeNotifier {
           line: 'Error loading audio source: $e',
         ),
       );
+    }
+  }
+
+  Future<void> _removeFlacTempFilesAsync() async {
+    for (var source in _player.audioSources.where(
+      (source) =>
+          !((source as audio.ProgressiveAudioSource).tag as TrackInfo)
+              .tmpPath
+              .isNull,
+    )) {
+      try {
+        final file = File(((source as audio.ProgressiveAudioSource).tag as TrackInfo).tmpPath!);
+
+        if (await file.exists()) {
+          await file.delete(); // Permanently removes the file
+          print("File deleted successfully.");
+        } else {
+          print("File does not exist.");
+        }
+      } catch (e) {
+        print("Error deleting file: $e");
+      }
     }
   }
 
@@ -438,7 +462,9 @@ class PlayerService with ChangeNotifier {
     final List<Song> songs =
         playlist.songs.map((playlist) => playlist.song).toList();
     await _player.setAudioSource(
-      audio.ConcatenatingAudioSource(children: _mapAudioSource(songs)),
+      audio.ConcatenatingAudioSource(
+        children: await _mapAudioSourceAsync(songs),
+      ),
     );
     _activePlaylist = playlist;
   }
@@ -580,7 +606,7 @@ class PlayerService with ChangeNotifier {
   }
 
   Future<void> loadRecentlyPlayedTracks(List<Song> songs) async {
-    _player.setAudioSources(_mapAudioSource(songs), );
+    _player.setAudioSources(await _mapAudioSourceAsync(songs));
     if (songs.isNotEmpty) _prepareMiniPlayer();
   }
 
@@ -684,15 +710,21 @@ class PlayerService with ChangeNotifier {
     // await _player.setClip(start: start, end: end);
   }
 
-  List<audio.AudioSource> _mapAudioSource(List<Song> songs) {
+  Future<List<audio.AudioSource>> _mapAudioSourceAsync(List<Song> songs) async {
     List<audio.AudioSource> sources = [];
     for (Song song in songs) {
+      String? convertedPath;
+      if (song.path.endsWith('.flac')) {
+        convertedPath = await _covertToM4AAsync(song.path);
+      }
+
       sources.add(
         audio.AudioSource.file(
-          song.path,
+          convertedPath ?? song.path,
           tag: TrackInfo(
             art: song.art,
             path: song.path,
+            tmpPath: convertedPath,
             title: song.name,
             artist: song.artist,
             dateAdded: song.dateAdded,
@@ -724,6 +756,27 @@ class PlayerService with ChangeNotifier {
       );
     }
     return sources;
+  }
+
+  Future<String> _covertToM4AAsync(String oldPath) async {
+    try {
+      final lastSeparator = oldPath.lastIndexOf(Platform.pathSeparator);
+      final directory = oldPath.substring(0, lastSeparator + 1);
+      final fileNameWithExt = oldPath.substring(lastSeparator + 1);
+
+      final dotIndex = fileNameWithExt.lastIndexOf('.');
+      final baseName =
+          dotIndex == -1
+              ? fileNameWithExt
+              : fileNameWithExt.substring(0, dotIndex);
+      final newPath = '$directory$baseName.wav';
+
+      if (File(newPath).existsSync()) return newPath;
+      return await AudioDecoder.convertToM4a(oldPath, newPath);
+    } on AudioConversionException catch (e) {
+      print('Decoding failed: $e');
+      return oldPath;
+    }
   }
 
   Future<bool> getIsMiniPlayerReadyAsync() async => _isMiniPlayerReady;

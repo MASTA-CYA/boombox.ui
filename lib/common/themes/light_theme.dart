@@ -47,7 +47,7 @@ class LightThemes {
       shape: const CircleBorder(),
       backgroundColor: ThemesCommon.primaryColor,
     ),
-    cardTheme: const CardTheme(
+    cardTheme: const CardThemeData(
       clipBehavior: Clip.antiAliasWithSaveLayer,
       elevation: 1,
       shape: RoundedRectangleBorder(),

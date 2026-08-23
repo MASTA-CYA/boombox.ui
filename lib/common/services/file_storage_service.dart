@@ -39,7 +39,9 @@ class FileStorageService {
                 .toList() ??
             [];
         final String extPath = paths.firstWhere(
-          (path) => path.contains(r'/storage/9016-4EF8/'),
+          (path) =>
+              path.contains(r'/storage/9016-4EF8/') ||
+              path.contains(r'/storage/443F-1D19/'),
         );
         if (extPath.isNotEmpty) {
           _writeToLogFile(
