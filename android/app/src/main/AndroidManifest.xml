@@ -4,7 +4,24 @@
     <uses-permission android:minSdkVersion="34" android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
-    
+
+    <!-- Storage/media access, split by API level:
+         - API <= 32 (Android <= 12): legacy READ_EXTERNAL_STORAGE.
+         - API >= 33 (Android 13+): granular READ_MEDIA_AUDIO.
+         - MANAGE_EXTERNAL_STORAGE ("All files access"): the app walks
+           user-picked folders directly via raw dart:io File/Directory
+           calls rather than the MediaStore content-resolver API, so on
+           Android 11+ (scoped storage) it needs this to actually see the
+           contents of arbitrary shared-storage folders - without it,
+           raw directory listings on folders the app doesn't own can
+           silently come back empty instead of throwing an error. This
+           permission can't be granted via a normal runtime dialog; it
+           requires sending the user to a system Settings screen (see
+           PermissionsService). -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+
     <application
         tools:replace="android:label"
         android:label="boombox"

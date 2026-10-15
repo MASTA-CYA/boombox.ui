@@ -10,6 +10,7 @@ import 'package:boombox/common/logger/logger.dart';
 import 'package:boombox/common/logger/models/log_event_model.dart';
 import 'package:boombox/common/services/file_storage_service.dart';
 import 'package:boombox/common/services/shared_preferences_service.dart';
+import 'package:boombox/settings-component/models/enums/storage_source_enum.dart';
 import 'package:boombox/settings-component/models/user_settings_model.dart';
 import 'package:boombox/theme-component/models/user_theme_model.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ class UserSettingsService with ChangeNotifier {
 
   late StreamController<bool> _lyricsController;
   late StreamController<bool> _storageController;
+  late StreamController<StorageSource> _storageSourceController;
   late StreamController<bool> _mediaController;
   late StreamController<bool> _equalizerController;
   late StreamController<bool> _newsController;
@@ -33,6 +35,8 @@ class UserSettingsService with ChangeNotifier {
 
   Stream<bool> get getCanSaveLyricsLocallyStream => _lyricsController.stream;
   Stream<bool> get getUseEternalStorageStream => _storageController.stream;
+  Stream<StorageSource> get getStorageSourceStream =>
+      _storageSourceController.stream;
   Stream<bool> get getCanDownloadArtistMediaStream => _mediaController.stream;
   Stream<bool> get getUseSmartEqualizerStream => _equalizerController.stream;
   Stream<bool> get getCanFetchNewsStream => _newsController.stream;
@@ -44,6 +48,8 @@ class UserSettingsService with ChangeNotifier {
       _enabledFeaturesController.stream;
 
   static bool? get useEternalStorage => _settings?.useEternalStorage;
+  static StorageSource get storageSource =>
+      _settings?.storageSource ?? StorageSource.automatic;
   static bool get canSaveLyricsLocally =>
       _settings?.canSaveLyricsLocally ?? false;
   static bool get canDownloadArtistMedia =>
@@ -70,6 +76,7 @@ class UserSettingsService with ChangeNotifier {
   void dispose() async {
     await _lyricsController.close();
     await _storageController.close();
+    await _storageSourceController.close();
     await _mediaController.close();
     await _equalizerController.close();
     await _newsController.close();
@@ -84,6 +91,7 @@ class UserSettingsService with ChangeNotifier {
     _preferences = SharedPreferencesService();
     _lyricsController = StreamController<bool>.broadcast();
     _storageController = StreamController<bool>.broadcast();
+    _storageSourceController = StreamController<StorageSource>.broadcast();
     _mediaController = StreamController<bool>.broadcast();
     _equalizerController = StreamController<bool>.broadcast();
     _appFeaturesController = StreamController<bool>.broadcast();
@@ -141,6 +149,8 @@ class UserSettingsService with ChangeNotifier {
 
       _lyricsController.sink.add(_settings?.canSaveLyricsLocally ?? false);
       _storageController.sink.add(_settings?.useEternalStorage ?? false);
+      _storageSourceController.sink
+          .add(_settings?.storageSource ?? StorageSource.automatic);
       _mediaController.sink.add(_settings?.canDownloadArtistMedia ?? false);
       _equalizerController.sink.add(_settings?.useSmartEqualizer ?? false);
       _newsController.sink.add(_settings?.canFetchNews ?? false);
@@ -192,6 +202,30 @@ class UserSettingsService with ChangeNotifier {
       );
       await _saveToStorage();
       _storageController.sink.add(canUse);
+    } on Exception catch (ex) {
+      await Logger.logAsync(
+        LogEvent<UserSettingsService>(
+          severity: Severity.error,
+          tag: Tag.service,
+          line: ex.toString(),
+        ),
+      );
+    }
+  }
+
+  Future<StorageSource> getStorageSourceAsync() async {
+    return _settings?.storageSource ?? StorageSource.automatic;
+  }
+
+  Future<void> updateStorageSourceAsync(StorageSource source) async {
+    try {
+      _settings!.storageSource = source;
+      await _preferences.saveAsync(
+        _USER_SETTINGS_KEY,
+        json.encode(UserSettings.toJson(_settings!)),
+      );
+      await _saveToStorage();
+      _storageSourceController.sink.add(source);
     } on Exception catch (ex) {
       await Logger.logAsync(
         LogEvent<UserSettingsService>(
