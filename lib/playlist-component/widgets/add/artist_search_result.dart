@@ -235,8 +235,8 @@ class _ArtistSearchResultWidgetState extends State<ArtistSearchResultWidget> {
           ),
           const Divider(
             thickness: 1,
-            indent: 16,
-            endIndent: 16,
+            indent: 10,
+            endIndent: 10,
           ),
         ],
       ),

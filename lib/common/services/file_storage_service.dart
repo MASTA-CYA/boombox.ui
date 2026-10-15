@@ -6,7 +6,9 @@ import 'package:boombox/common/logger/enums/severity_enum.dart';
 import 'package:boombox/common/logger/enums/tag_enum.dart';
 import 'package:boombox/common/logger/logger.dart';
 import 'package:boombox/common/logger/models/log_event_model.dart';
+import 'package:boombox/common/services/storage_detection_service.dart';
 import 'package:boombox/player-component/models/cached_album_art_model.dart';
+import 'package:boombox/settings-component/models/enums/storage_source_enum.dart';
 import 'package:boombox/settings-component/services/user_settings_service.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:path_provider/path_provider.dart';
@@ -30,47 +32,42 @@ class FileStorageService {
     }
     if (UserSettingsService.useEternalStorage ?? true) {
       if (_eternalDirectory.isNull) {
-        final List<Directory>? extDirectories =
-            await getExternalStorageDirectories();
-        final List<String> paths = extDirectories
-                ?.map(
-                  (dir) => dir.path,
-                )
-                .toList() ??
-            [];
-        final String extPath = paths.firstWhere(
-          (path) => path.contains(r'/storage/9016-4EF8/'),
+        final StorageSource preference = UserSettingsService.storageSource;
+        final Directory? resolved =
+            await StorageDetectionService.resolveStorageDirectoryAsync(
+          preference,
         );
-        if (extPath.isNotEmpty) {
+
+        if (resolved.isNull) {
+          // No external storage directories are available at all (rare -
+          // e.g. some emulators). Fall back to the app's own support
+          // directory rather than crashing.
           _writeToLogFile(
-            'External storage found at path: $extPath',
+            'No external storage directories available. '
+            'Falling back to app support directory for eternal storage.',
           );
-          final List<String> pathSplit = extPath.split('/');
-          _eternalDirectory =
-              Directory('/${pathSplit[1]}/${pathSplit[2]}/Eternal');
-          if (!await _eternalDirectory!.exists()) {
-            _writeToLogFile(
-              'Eternal storage directory does not exist. '
-              'Attempting to create it at path: ${_eternalDirectory!.path}',
-            );
-            _eternalDirectory = await _eternalDirectory!.create();
-            _dumpLogsDirectory = Directory('${_eternalDirectory!.path}/logs');
-            if (!await _dumpLogsDirectory!.exists()) {
-              await _dumpLogsDirectory!.create();
-            }
-          }
+          _eternalDirectory = Directory('${_appSupDirectory!.path}/Eternal');
+        } else if (await StorageDetectionService.isPathOnSdCardAsync(
+          resolved!.path,
+        )) {
+          final String volumeRoot =
+              StorageDetectionService.volumeRootOf(resolved.path);
+          _writeToLogFile('Eternal storage using SD card at: $volumeRoot');
+          _eternalDirectory = Directory('$volumeRoot/Eternal');
         } else {
-          // No SD Card. Use internal storage
-          Directory? internal = extDirectories?.first;
-          _eternalDirectory = Directory('${internal!.path}/Eternal');
           _writeToLogFile(
-            'No SD Card found for eternal storage. '
-            'Using internal storage',
+            'Eternal storage using internal storage at: ${resolved.path}',
           );
-          _dumpLogsDirectory = Directory('${_eternalDirectory!.path}/logs');
-          if (!await _dumpLogsDirectory!.exists()) {
-            await _dumpLogsDirectory!.create();
-          }
+          _eternalDirectory = Directory('${resolved.path}/Eternal');
+        }
+
+        if (!await _eternalDirectory!.exists()) {
+          _writeToLogFile(
+            'Eternal storage directory does not exist. '
+            'Attempting to create it at path: ${_eternalDirectory!.path}',
+          );
+          _eternalDirectory =
+              await _eternalDirectory!.create(recursive: true);
         }
       }
       if (_dumpLogsDirectory.isNull) {

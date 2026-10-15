@@ -1,9 +1,11 @@
 import 'package:boombox/commons_barrel.dart';
+import 'package:boombox/settings-component/models/enums/storage_source_enum.dart';
 import 'package:boombox/theme-component/models/user_theme_model.dart';
 
 class UserSettings {
   bool? canSaveLyricsLocally;
   bool? useEternalStorage;
+  StorageSource? storageSource;
   bool? canDownloadArtistMedia;
   bool? useSmartEqualizer;
   bool? canFetchNews;
@@ -15,6 +17,7 @@ class UserSettings {
   UserSettings({
     this.canSaveLyricsLocally = false,
     this.useEternalStorage = false,
+    this.storageSource = StorageSource.automatic,
     this.canDownloadArtistMedia = false,
     this.useSmartEqualizer = false,
     this.canFetchNews = false,
@@ -27,6 +30,9 @@ class UserSettings {
   factory UserSettings.fromJson(Map<String, dynamic> json) => UserSettings(
         canSaveLyricsLocally: json['canSaveLyricsLocally'],
         useEternalStorage: json['useEternalStorage'],
+        storageSource: json['storageSource'] != null
+            ? StorageSource.values[json['storageSource']]
+            : StorageSource.automatic,
         canDownloadArtistMedia: json['canDownloadArtistMedia'],
         useSmartEqualizer: json['useSmartEqualizer'],
         canFetchNews: json['canFetchNews'],
@@ -43,6 +49,8 @@ class UserSettings {
   static Map<String, dynamic> toJson(UserSettings settings) => {
         'canSaveLyricsLocally': settings.canSaveLyricsLocally,
         'useEternalStorage': settings.useEternalStorage,
+        'storageSource':
+            (settings.storageSource ?? StorageSource.automatic).index,
         'canDownloadArtistMedia': settings.canDownloadArtistMedia,
         'useSmartEqualizer': settings.useSmartEqualizer,
         'canFetchNews': settings.canFetchNews,

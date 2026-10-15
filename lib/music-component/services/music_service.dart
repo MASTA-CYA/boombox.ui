@@ -34,8 +34,7 @@ import 'package:boombox/music-component/strategy/song_search_strategy.dart';
 import 'package:boombox/settings-component/services/user_settings_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-// import 'package:flutter_media_metadata/flutter_media_metadata.dart';
-import 'package:metadata_god/metadata_god.dart';
+import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 import 'package:mime/mime.dart';
 import 'package:intl/intl.dart';
 
@@ -83,10 +82,24 @@ class MusicService with ChangeNotifier {
     _artists = [];
 
     _isMappingStreamController = StreamController<MappingResult>.broadcast();
-    await ServiceBus().registerMessageQueueAsync(_MAPPING_STATUS);
-    await MetadataGod.initialize();
-    await _loadDirectoriesAsync();
-    await _loadLibrariesAsync();
+
+    try {
+      await ServiceBus().registerMessageQueueAsync(_MAPPING_STATUS);
+      await _loadDirectoriesAsync();
+      await _loadLibrariesAsync();
+    } on Exception catch (ex) {
+      await Logger.logAsync(
+        LogEvent<MusicService>(
+          severity: Severity.error,
+          tag: Tag.service,
+          line: ex.toString(),
+        ),
+      );
+      await _sendMappingNotificationAsync(
+        "Mapping failed",
+        MessageSeverity.alert,
+      );
+    }
   }
 
   Future<bool> isBusyMapping() async => _isBusyMapping;
@@ -118,25 +131,29 @@ class MusicService with ChangeNotifier {
 
     start = DateTime.now();
     _isBusyMapping = true;
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping started.',
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping started.',
+    // );
+    await _sendMappingNotificationAsync(
+      "Mapping started",
+      MessageSeverity.information,
     );
     await _mapAlbumsAsync();
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping albums done.',
-    );
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping albums done.',
+    // );
     await _mapSongsAsync();
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping songs done.',
-    );
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping songs done.',
+    // );
     await _mapArtistsAsync();
-    await ServiceBus().sendMessageAsync<String>(
-      _MAPPING_STATUS,
-      'Mapping artists done.',
-    );
+    // await ServiceBus().sendMessageAsync<String>(
+    //   _MAPPING_STATUS,
+    //   'Mapping artists done.',
+    // );
     _isBusyMapping = false;
     end = DateTime.now();
 
@@ -361,131 +378,185 @@ class MusicService with ChangeNotifier {
       int year = 0;
       List<Song> songs = [];
       bool isSingle;
+      int skippedFileCount = 0;
+      int skippedDirectoryCount = 0;
 
       // loop through directories
       for (DirectoryListing listing in _directories) {
-        // get album name from directory
-        if (listing.path.contains('SongsLover')) {
-          album = listing.path.split(' - ').elementAt(1);
-        }
-
-        // check for singles directory
-        isSingle = listing.path.split('/').last.equals('Singles');
-
-        // attempt to get cover image from directory
-        cover = _getCoverFromDirectory(listing);
-
-        // loop through files
-        for (String file in listing.files) {
-          if (_isFileImage(file) || !_isFileAudio(file)) continue;
-          // Metadata meta = await MetadataRetriever.fromFile(File(file));
-          Metadata meta = await MetadataGod.readMetadata(file: file);
-          // sanitize track name
-          String name = _sanitizeTrackName(
-            // meta.trackName ?? file.split('/').last,
-            meta.title ?? file.split('/').last,
-            isSingle,
-          );
-
-          // get album info from first song
-          if (songs.isEmpty) {
-            // album name
-            // album = _sanitizeAlbumName(meta.albumName, meta.albumArtistName);
-            album = _sanitizeAlbumName(meta.album, meta.albumArtist);
-            // artist name
-            artist = await _sanitizeArtistName(
-              album,
-              name,
-              meta.albumArtist,
-              meta.album,
-              meta.artist,
-              isSingle,
-            );
-            if (isSingle) artist = _getSingleTrackArtist(name);
-            // album art
-            if (!isSingle) {
-              art = await ImageStoreService.getImageAsync<Uint8List>(album);
-            }
-            if (art.isNull) {
-              art = await _prepareAlbumArtAsync(
-                cover,
-                meta.picture?.data,
-                artist,
-                album,
-                isSingle,
-              );
-            }
-            // album year
-            year = meta.year ?? year;
+        try {
+          // get album name from directory
+          if (listing.path.contains('SongsLover')) {
+            album = listing.path.split(' - ').elementAt(1);
           }
 
-          // track genre
-          final String genre =
-              meta.genre ?? await _getTrackGenreAsync(name, artist);
+          // check for singles directory
+          final String folderName = listing.path.split('/').last;
+          isSingle = folderName.equals('Singles');
 
-          songs.add(
-            Song(
-              id: songId,
-              path: file,
-              art: art!,
-              name: name,
-              artist: artist,
-              duration: meta.duration?.inSeconds ?? 0,
-              yearReleased: meta.year ?? DateTime.now().year,
-              genre: genre,
-              dateAdded: File(file).statSync().changed.toIso8601String(),
-              discNumber: meta.discNumber ?? 0,
-              mimeType: lookupMimeType(file) ?? 'Unknown',
-              bitRate: 0,
+          // attempt to get cover image from directory
+          cover = _getCoverFromDirectory(listing);
+
+          // loop through files
+          for (String file in listing.files) {
+            if (_isFileImage(file) || !_isFileAudio(file)) continue;
+
+            try {
+              Metadata meta = await MetadataRetriever.fromFile(File(file));
+              // sanitize track name
+              String trackName = _sanitizeTrackName(
+                // meta.trackName ?? file.split('/').last,
+                meta.trackName ?? file.split('/').last,
+                isSingle,
+              );
+              // get album info from first song
+              if (songs.isEmpty) {
+                // album name
+                album =
+                    isSingle
+                        ? listing.path.split("/").last
+                        : _sanitizeAlbumName(
+                          meta.albumName,
+                          meta.albumArtistName,
+                          folderName,
+                        );
+                // artist name
+                artist = await _sanitizeArtistName(
+                  album,
+                  trackName,
+                  meta.albumArtistName,
+                  meta.albumName,
+                  meta.trackArtistNames?.first,
+                  isSingle,
+                );
+                if (isSingle) artist = _getSingleTrackArtist(trackName);
+                // album art
+                if (!isSingle) {
+                  art = await ImageStoreService.getImageAsync<Uint8List>(
+                    album,
+                  );
+                }
+                if (art.isNull) {
+                  art = await _prepareAlbumArtAsync(
+                    cover,
+                    meta.albumArt,
+                    artist,
+                    album,
+                    isSingle,
+                  );
+                }
+                // album year
+                year = meta.year ?? year;
+              }
+
+              // track genre
+              final String genre =
+                  meta.genre ?? await _getTrackGenreAsync(trackName, artist);
+
+              songs.add(
+                Song(
+                  id: songId,
+                  path: file,
+                  art: art!,
+                  name: trackName,
+                  artist: artist,
+                  duration: meta.trackDuration ?? 0,
+                  yearReleased: meta.year ?? DateTime.now().year,
+                  genre: genre,
+                  dateAdded: File(file).statSync().changed.toIso8601String(),
+                  discNumber: meta.discNumber ?? 0,
+                  mimeType: lookupMimeType(file) ?? 'Unknown',
+                  bitRate: 0,
+                ),
+              );
+              songId++;
+            } on Exception catch (ex) {
+              // A single unreadable/unsupported file (e.g. corrupt tags,
+              // unsupported codec) should not abort mapping for the rest
+              // of the library - log it, skip it, and keep going.
+              skippedFileCount++;
+              await Logger.logAsync(
+                LogEvent<MusicService>(
+                  severity: Severity.error,
+                  tag: Tag.service,
+                  line: 'Failed to map file "$file", skipping it: $ex',
+                ),
+              );
+              continue;
+            }
+          }
+
+          _albums.add(
+            Album(
+              id: albumId,
+              art: songs.isNotEmpty ? songs.first.art : Uint8List(0),
+              name: album,
+              artist: songs.isNotEmpty ? songs.first.artist : 'Unknown',
+              year: year,
+              tracks: songs.length,
+              songs: List.from(songs),
             ),
           );
-          songId++;
+
+          await Logger.logAsync(
+            LogEvent<MusicService>(
+              severity: Severity.information,
+              tag: Tag.service,
+              line: album,
+            ),
+          );
+
+          // Save art to ImageStore
+          if (art != null && art.isNotEmpty) {
+            isSingle
+                ? null
+                : ImageStoreService().saveImageAsync<Uint8List>(album, art);
+          }
+        } on Exception catch (ex) {
+          // Something went wrong processing this directory as a whole
+          // (e.g. building album art or artist metadata) - skip this
+          // directory rather than losing the rest of the library.
+          skippedDirectoryCount++;
+          await Logger.logAsync(
+            LogEvent<MusicService>(
+              severity: Severity.error,
+              tag: Tag.service,
+              line:
+                  'Failed to map directory "${listing.path}", skipping it: '
+                  '$ex',
+            ),
+          );
+        } finally {
+          // Clean up
+          albumId++;
+          cover = null;
+          art = Uint8List(0);
+          album = '';
+          artist = 'Unknown';
+          year = 0;
+          songs.clear();
+          isSingle = false;
         }
+      }
 
-        _albums.add(
-          Album(
-            id: albumId,
-            art: songs.isNotEmpty ? songs.first.art : Uint8List(0),
-            name: album,
-            artist: songs.isNotEmpty ? songs.first.artist : 'Unknown',
-            year: year,
-            tracks: songs.length,
-            songs: List.from(songs),
-          ),
-        );
-
+      if (skippedFileCount > 0 || skippedDirectoryCount > 0) {
         await Logger.logAsync(
           LogEvent<MusicService>(
-            severity: Severity.information,
+            severity: Severity.error,
             tag: Tag.service,
-            line: album,
+            line:
+                'Album mapping finished with errors: '
+                '$skippedFileCount file(s) and $skippedDirectoryCount '
+                'director(y/ies) were skipped.',
           ),
         );
-
-        // Save art to ImageStore
-        if (art!.isNotEmpty) {
-          isSingle
-              ? null
-              : ImageStoreService().saveImageAsync<Uint8List>(album, art);
-        }
-
-        // Clean up
-        albumId++;
-        cover = null;
-        art = Uint8List(0);
-        album = '';
-        artist = 'Unknown';
-        year = 0;
-        songs.clear();
-        isSingle = false;
       }
     }
   }
 
   // ignore: unused_element
   Future<void> _mapOnlineAlbumsAsync() async {
-    List<Album> _onlineAlbums = await MediaStoreService().getAlbumsAsync();
-    _albums.addAll(_onlineAlbums);
+    List<Album> onlineAlbums = await MediaStoreService().getAlbumsAsync();
+    _albums.addAll(onlineAlbums);
   }
 
   Future<List<Artist>> getArtistsAsync(
@@ -608,7 +679,7 @@ class MusicService with ChangeNotifier {
   }
 
   bool _isFileAudio(String file) {
-    return file.contains(RegExp(r'.(mp3|wav|wma|amr|ogg|flac)$'));
+    return file.contains(RegExp(r'.(mp3|m4a|wav|wma|amr|ogg|flac)$'));
   }
 
   String _sanitizeTrackName(String trackName, bool isSingle) {
@@ -644,14 +715,21 @@ class MusicService with ChangeNotifier {
     return name.trim();
   }
 
-  String _sanitizeAlbumName(String? albumName, String? name) {
+  String _sanitizeAlbumName(
+    String? albumName,
+    String? name,
+    String alternativeName,
+  ) {
     String album = 'Unknown';
 
-    if (albumName.isNull) return album;
+    if (albumName.isNull && name.isNull) {
+      return alternativeName;
+    } else if (albumName.isNull) {
+      return album;
+    }
 
     if (albumName!.contains('Leakedzip.com')) {
-      if (name.isNull) return albumName;
-      album = name!;
+      album = name.isNull ? albumName : name!;
     } else {
       album = albumName;
     }
@@ -782,6 +860,21 @@ class MusicService with ChangeNotifier {
         notificationText: result,
         severity: severity,
       ),
+    );
+  }
+
+  Future _sendMappingNotificationAsync(
+    String text,
+    MessageSeverity severity,
+  ) async {
+    await MessageService().sendNotificationAsync(
+      AppNotification(
+        title: 'Mapping Update',
+        message: '',
+        notificationText: text,
+        severity: severity,
+      ),
+      saveAsMessage: false,
     );
   }
 

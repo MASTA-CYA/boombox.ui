@@ -11,11 +11,13 @@ import 'package:boombox/common/logger/logger.dart';
 import 'package:boombox/common/logger/models/log_event_model.dart';
 import 'package:boombox/common/service-bus/service_bus.dart';
 import 'package:boombox/common/services/application_lifecycle_service.dart';
+import 'package:boombox/common/services/file_storage_service.dart';
 import 'package:boombox/common/services/notification_service.dart';
 import 'package:boombox/music-component/music_barrel.dart';
 import 'package:boombox/player-component/audio-handlers/media_controls_handler.dart';
 import 'package:boombox/player-component/models/enums/player_mode_enum.dart';
 import 'package:boombox/player-component/models/position_data_model.dart';
+import 'package:boombox/player-component/models/streaming_audio_source.dart';
 import 'package:boombox/player-component/services/lyrics_service.dart';
 import 'package:boombox/playlist-component/models/playlist_song_model.dart';
 import 'package:boombox/settings-component/services/user_settings_service.dart';
@@ -25,6 +27,8 @@ import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart' as audio;
 // ignore: depend_on_referenced_packages
 import 'package:rxdart/rxdart.dart';
+import 'package:audio_decoder/audio_decoder.dart';
+import 'dart:io';
 
 class PlayerService with ChangeNotifier {
   final String _IS_PLAYING_QUEUE = '_IS_PLAYING_QUEUE';
@@ -69,8 +73,10 @@ class PlayerService with ChangeNotifier {
       _player.playerStateStream;
   Stream<audio.SequenceState?> get getSequenceStateStream =>
       _player.sequenceStateStream;
+  // Stream<bool>? getPlayerPlayingStateStream(String sender) =>
+  //     _isPlayingSubscribers[sender]?.stream;
   Stream<bool>? getPlayerPlayingStateStream(String sender) =>
-      _isPlayingSubscribers[sender]?.stream;
+      _player.playingStream;
   Stream<audio.ProcessingState> get getPlayerProcessingStateStream =>
       _player.processingStateStream;
   Stream<audio.PlaybackEvent> get getPlaybackStateStream =>
@@ -119,13 +125,7 @@ class PlayerService with ChangeNotifier {
     // Queues
     _isPlayingSubscribers = await ServiceBus().registerStreamQueueAsync<bool>(
       _IS_PLAYING_QUEUE,
-      [
-        'MINI',
-        'PLAYER',
-        'POPUP',
-        'MEDIA',
-        'INTERRUPT',
-      ],
+      ['MINI', 'PLAYER', 'POPUP', 'MEDIA', 'INTERRUPT'],
     );
     _player.playingStream.listen((isPlaying) async {
       await ServiceBus().sendMessageAsync<bool>(_IS_PLAYING_QUEUE, isPlaying);
@@ -136,20 +136,16 @@ class PlayerService with ChangeNotifier {
     _playlistStreamController = StreamController.broadcast();
     _miniPlayerStreamController = StreamController.broadcast();
 
-    _player.processingStateStream.listen(
-      (state) async {
-        if (state == audio.ProcessingState.completed) await _player.pause();
-      },
-    );
-    _player.sequenceStateStream.listen(
-      (sequence) async {
-        _prepareMiniPlayer();
-        await _prepareActivePlaylistAsync();
-        await _prepareActiveSongLyricsAsync(
-          tag: sequence?.currentSource?.tag as TrackInfo?,
-        );
-      },
-    );
+    _player.processingStateStream.listen((state) async {
+      if (state == audio.ProcessingState.completed) await _player.pause();
+    });
+    _player.sequenceStateStream.listen((sequence) async {
+      _prepareMiniPlayer();
+      await _prepareActivePlaylistAsync();
+      await _prepareActiveSongLyricsAsync(
+        tag: sequence.currentSource?.tag as TrackInfo?,
+      );
+    });
     getPositionDataStream.listen(
       (position) async => await _prepareActiveSongLyricsAsync(),
     );
@@ -164,8 +160,9 @@ class PlayerService with ChangeNotifier {
         // Inform the operating system of our app's audio attributes etc.
         // We pick a reasonable default for an app that plays speech.
         _audioSession = await AudioSession.instance;
-        await _audioSession!
-            .configure(const AudioSessionConfiguration.speech());
+        await _audioSession!.configure(
+          const AudioSessionConfiguration.speech(),
+        );
         _audioSession!.setActive(true);
         // Listen to audio interruptions and pause or duck as appropriate.
         _handleInterruptionsAsync(_audioSession!);
@@ -204,106 +201,98 @@ class PlayerService with ChangeNotifier {
     // just_audio can handle interruptions for us, but we have disabled that in
     // order to demonstrate manual configuration.
     bool playInterrupted = false;
-    audioSession.becomingNoisyEventStream.listen(
-      (_) async {
+    audioSession.becomingNoisyEventStream.listen((_) async {
+      await Logger.logAsync(
+        LogEvent<PlayerService>(
+          severity: Severity.information,
+          tag: Tag.service,
+          line: 'becomingNoisyEventStream: PAUSE',
+        ),
+      );
+      _player.pause();
+    });
+
+    getPlayerPlayingStateStream('INTERRUPT')?.listen((isPlaying) {
+      playInterrupted = false;
+      if (isPlaying) {
+        audioSession.setActive(true);
+      }
+    });
+
+    audioSession.interruptionEventStream.listen((event) async {
+      await Logger.logAsync(
+        LogEvent<PlayerService>(
+          severity: Severity.information,
+          tag: Tag.service,
+          line: 'Interruption begin: ${event.begin}',
+        ),
+      );
+      await Logger.logAsync(
+        LogEvent<PlayerService>(
+          severity: Severity.information,
+          tag: Tag.service,
+          line: 'Interruption type: ${event.type}',
+        ),
+      );
+
+      if (event.begin) {
+        switch (event.type) {
+          case AudioInterruptionType.duck:
+            if (audioSession.androidAudioAttributes!.usage ==
+                AndroidAudioUsage.game) {
+              _player.setVolume(_player.volume / 2);
+            }
+            playInterrupted = false;
+            break;
+          case AudioInterruptionType.pause:
+          case AudioInterruptionType.unknown:
+            if (_player.playing) {
+              _player.pause();
+              playInterrupted = true;
+            }
+            break;
+        }
+      } else {
+        switch (event.type) {
+          case AudioInterruptionType.duck:
+            _player.setVolume(min(1.0, _player.volume * 2));
+            playInterrupted = false;
+            break;
+          case AudioInterruptionType.pause:
+            if (playInterrupted) _player.play();
+            playInterrupted = false;
+            break;
+          case AudioInterruptionType.unknown:
+            playInterrupted = false;
+            break;
+        }
+      }
+    });
+
+    audioSession.devicesChangedEventStream.listen((event) async {
+      // Device added
+      if (event.devicesAdded.isNotEmpty) {
         await Logger.logAsync(
           LogEvent<PlayerService>(
             severity: Severity.information,
             tag: Tag.service,
-            line: 'becomingNoisyEventStream: PAUSE',
+            line: 'Devices added:${_formatDevicesOutput(event.devicesAdded)}',
           ),
         );
-        _player.pause();
-      },
-    );
+      }
 
-    getPlayerPlayingStateStream('INTERRUPT')?.listen(
-      (isPlaying) {
-        playInterrupted = false;
-        if (isPlaying) {
-          audioSession.setActive(true);
-        }
-      },
-    );
-
-    audioSession.interruptionEventStream.listen(
-      (event) async {
+      // Device removed
+      if (event.devicesRemoved.isNotEmpty) {
         await Logger.logAsync(
           LogEvent<PlayerService>(
             severity: Severity.information,
             tag: Tag.service,
-            line: 'Interruption begin: ${event.begin}',
+            line:
+                'Devices removed:${_formatDevicesOutput(event.devicesRemoved)}',
           ),
         );
-        await Logger.logAsync(
-          LogEvent<PlayerService>(
-            severity: Severity.information,
-            tag: Tag.service,
-            line: 'Interruption type: ${event.type}',
-          ),
-        );
-
-        if (event.begin) {
-          switch (event.type) {
-            case AudioInterruptionType.duck:
-              if (audioSession.androidAudioAttributes!.usage ==
-                  AndroidAudioUsage.game) {
-                _player.setVolume(_player.volume / 2);
-              }
-              playInterrupted = false;
-              break;
-            case AudioInterruptionType.pause:
-            case AudioInterruptionType.unknown:
-              if (_player.playing) {
-                _player.pause();
-                playInterrupted = true;
-              }
-              break;
-          }
-        } else {
-          switch (event.type) {
-            case AudioInterruptionType.duck:
-              _player.setVolume(min(1.0, _player.volume * 2));
-              playInterrupted = false;
-              break;
-            case AudioInterruptionType.pause:
-              if (playInterrupted) _player.play();
-              playInterrupted = false;
-              break;
-            case AudioInterruptionType.unknown:
-              playInterrupted = false;
-              break;
-          }
-        }
-      },
-    );
-
-    audioSession.devicesChangedEventStream.listen(
-      (event) async {
-        // Device added
-        if (event.devicesAdded.isNotEmpty) {
-          await Logger.logAsync(
-            LogEvent<PlayerService>(
-              severity: Severity.information,
-              tag: Tag.service,
-              line: 'Devices added:${_formatDevicesOutput(event.devicesAdded)}',
-            ),
-          );
-        }
-
-        // Device removed
-        if (event.devicesRemoved.isNotEmpty) {
-          await Logger.logAsync(
-            LogEvent<PlayerService>(
-              severity: Severity.information,
-              tag: Tag.service,
-              line:
-                  'Devices removed:${_formatDevicesOutput(event.devicesRemoved)}',
-            ),
-          );
-        }
-      },
-    );
+      }
+    });
   }
 
   Future<int> getAudioSessionIdAsync() async {
@@ -342,11 +331,44 @@ class PlayerService with ChangeNotifier {
   }
 
   Future<void> playAlbumAsync(List<Song> songs, int index) async {
-    await _player.setAudioSource(
-      initialIndex: index,
-      audio.ConcatenatingAudioSource(children: _mapAudioSource(songs)),
-    );
-    await _player.play();
+    try {
+      await _removeFlacTempFilesAsync();
+      await _player.setAudioSources(
+        await _mapAudioSourceAsync(songs),
+        initialIndex: index,
+      );
+      await _player.play();
+    } catch (e) {
+      await Logger.logAsync(
+        LogEvent<PlayerService>(
+          severity: Severity.error,
+          tag: Tag.service,
+          line: 'Error loading audio source: $e',
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeFlacTempFilesAsync() async {
+    for (var source in _player.audioSources.where(
+      (source) =>
+          !((source as audio.ProgressiveAudioSource).tag as TrackInfo)
+              .tmpPath
+              .isNull,
+    )) {
+      try {
+        final file = File(((source as audio.ProgressiveAudioSource).tag as TrackInfo).tmpPath!);
+
+        if (await file.exists()) {
+          await file.delete(); // Permanently removes the file
+          print("File deleted successfully.");
+        } else {
+          print("File does not exist.");
+        }
+      } catch (e) {
+        print("Error deleting file: $e");
+      }
+    }
   }
 
   Future<void> playSingleTrackAsync(Song song) async {
@@ -437,13 +459,12 @@ class PlayerService with ChangeNotifier {
   }
 
   Future<void> _setPlaylistAsync(Playlist playlist) async {
-    final List<Song> songs = playlist.songs
-        .map(
-          (playlist) => playlist.song,
-        )
-        .toList();
+    final List<Song> songs =
+        playlist.songs.map((playlist) => playlist.song).toList();
     await _player.setAudioSource(
-      audio.ConcatenatingAudioSource(children: _mapAudioSource(songs)),
+      audio.ConcatenatingAudioSource(
+        children: await _mapAudioSourceAsync(songs),
+      ),
     );
     _activePlaylist = playlist;
   }
@@ -452,22 +473,21 @@ class PlayerService with ChangeNotifier {
     String path,
     bool isPlaying,
   ) async {
-    final audio.IndexedAudioSource? nowPlaying =
-        _player.sequenceState?.sequence.firstWhere(
-      (song) => (song.tag as TrackInfo).path.equals(path),
-    );
-    final int? position = _player.sequenceState?.sequence.indexOf(nowPlaying!);
+    final audio.IndexedAudioSource nowPlaying = _player.sequenceState.sequence
+        .firstWhere((song) => (song.tag as TrackInfo).path.equals(path));
+    final int position = _player.sequenceState.sequence.indexOf(nowPlaying);
 
     if (isPlaying &&
-        (_player.sequenceState?.currentSource?.equals(nowPlaying) ?? false)) {
+        (_player.sequenceState.currentSource?.equals(nowPlaying) ?? false)) {
       await _player.pause();
     } else if (!isPlaying) {
       await _player.setAudioSource(
         initialIndex: position,
         audio.ConcatenatingAudioSource(
-          children: _player.sequenceState!.sequence
-              .map((e) => e as audio.AudioSource)
-              .toList(),
+          children:
+              _player.sequenceState.sequence
+                  .map((e) => e as audio.AudioSource)
+                  .toList(),
         ),
       );
       _player.play();
@@ -478,15 +498,15 @@ class PlayerService with ChangeNotifier {
     // if (!_activePlaylist.isNull) return _activePlaylist!;
 
     List<audio.IndexedAudioSource> sources =
-        _player.sequenceState?.sequence ?? [];
+        _player.sequenceState.sequence ?? [];
     List<PlaylistSong> songs = [];
 
     for (audio.IndexedAudioSource source in sources) {
       final TrackInfo info = source.tag as TrackInfo;
-      final bool isPlaying =
-          (_player.sequenceState!.currentSource!.tag as TrackInfo)
-              .path!
-              .equals(info.path!);
+      final bool isPlaying = (_player.sequenceState.currentSource!.tag
+              as TrackInfo)
+          .path!
+          .equals(info.path!);
 
       songs.add(
         PlaylistSong(
@@ -497,8 +517,8 @@ class PlayerService with ChangeNotifier {
             name: info.title!,
             artist: info.artist!,
             duration:
-                _player.sequenceState!.currentSource!.duration?.inSeconds ??
-                    const Duration().inSeconds,
+                _player.sequenceState.currentSource!.duration?.inSeconds ??
+                const Duration().inSeconds,
             yearReleased: info.year ?? DateTime.now().year,
             genre: info.genre ?? 'Unknown',
             dateAdded: info.dateAdded ?? DateTime.now().toIso8601String(),
@@ -524,7 +544,7 @@ class PlayerService with ChangeNotifier {
 
   Future<void> sweepActivePlayingAsync(Playlist playlist) async {
     final audio.IndexedAudioSource? currentSource =
-        _player.sequenceState?.currentSource;
+        _player.sequenceState.currentSource;
     final String sourcePath = (currentSource?.tag as TrackInfo).path ?? '';
 
     if (playlist.songs.isEmpty) {
@@ -533,7 +553,8 @@ class PlayerService with ChangeNotifier {
         date: playlist.date,
         name: playlist.name,
         tracks: playlist.tracks,
-        songs: _activePlaylist?.songs
+        songs:
+            _activePlaylist?.songs
                 .where((playlistSong) => playlistSong.song.equals(sourcePath))
                 .toList() ??
             [PlaylistSong(song: MusicService().getSongByPath(sourcePath))],
@@ -551,9 +572,7 @@ class PlayerService with ChangeNotifier {
       _playlistStreamController.sink.add(playlist);
       _player.play();
     } else {
-      _player.setAudioSource(
-        currentSource as audio.AudioSource,
-      );
+      _player.setAudioSource(currentSource as audio.AudioSource);
       _playlistStreamController.sink.add(playlist);
     }
   }
@@ -563,7 +582,7 @@ class PlayerService with ChangeNotifier {
   Future<void> showNowPlayingNotificationAsync({bool? isPlaying}) async {
     if (ApplicationLifecycleService.canSendMediaPlayerNotifications()) {
       TrackInfo nowPlaying =
-          _player.sequenceState!.currentSource!.tag as TrackInfo;
+          _player.sequenceState.currentSource!.tag as TrackInfo;
 
       Uri? image;
       if (nowPlaying.art!.isNotEmpty) {
@@ -587,11 +606,7 @@ class PlayerService with ChangeNotifier {
   }
 
   Future<void> loadRecentlyPlayedTracks(List<Song> songs) async {
-    _player.setAudioSource(
-      audio.ConcatenatingAudioSource(
-        children: _mapAudioSource(songs),
-      ),
-    );
+    _player.setAudioSources(await _mapAudioSourceAsync(songs));
     if (songs.isNotEmpty) _prepareMiniPlayer();
   }
 
@@ -602,14 +617,17 @@ class PlayerService with ChangeNotifier {
       await _player.setAudioSource(
         audio.AudioSource.uri(
           Uri.parse(
-              "https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3"),
+            "https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3",
+          ),
           tag: TrackInfo(
-            art: (await NetworkAssetBundle(
-              Uri.parse(
-                  'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg'),
-            ).load('https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg'))
-                .buffer
-                .asUint8List(),
+            art:
+                (await NetworkAssetBundle(
+                  Uri.parse(
+                    'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg',
+                  ),
+                ).load(
+                  'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg',
+                )).buffer.asUint8List(),
             path:
                 'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg',
             title: "Nature Sounds",
@@ -639,8 +657,12 @@ class PlayerService with ChangeNotifier {
     }
   }
 
-  String _buildTrackDetails(String title, String artist, String path,
-      {Map<String, String>? other}) {
+  String _buildTrackDetails(
+    String title,
+    String artist,
+    String path, {
+    Map<String, String>? other,
+  }) {
     String details = '';
     details += 'Title: $title\n\nArtist: $artist\n\n';
 
@@ -688,15 +710,21 @@ class PlayerService with ChangeNotifier {
     // await _player.setClip(start: start, end: end);
   }
 
-  List<audio.AudioSource> _mapAudioSource(List<Song> songs) {
+  Future<List<audio.AudioSource>> _mapAudioSourceAsync(List<Song> songs) async {
     List<audio.AudioSource> sources = [];
     for (Song song in songs) {
+      String? convertedPath;
+      if (song.path.endsWith('.flac')) {
+        convertedPath = await _covertToM4AAsync(song.path);
+      }
+
       sources.add(
         audio.AudioSource.file(
-          song.path,
+          convertedPath ?? song.path,
           tag: TrackInfo(
             art: song.art,
             path: song.path,
+            tmpPath: convertedPath,
             title: song.name,
             artist: song.artist,
             dateAdded: song.dateAdded,
@@ -711,9 +739,10 @@ class PlayerService with ChangeNotifier {
               song.artist,
               song.path,
               other: {
-                'Disc Number': song.discNumber == 0
-                    ? 'Unknown'
-                    : song.discNumber.toString(),
+                'Disc Number':
+                    song.discNumber == 0
+                        ? 'Unknown'
+                        : song.discNumber.toString(),
                 'Genre': song.genre,
                 'Mime Type': song.mimeType,
                 'Bitrate':
@@ -729,6 +758,27 @@ class PlayerService with ChangeNotifier {
     return sources;
   }
 
+  Future<String> _covertToM4AAsync(String oldPath) async {
+    try {
+      final lastSeparator = oldPath.lastIndexOf(Platform.pathSeparator);
+      final directory = oldPath.substring(0, lastSeparator + 1);
+      final fileNameWithExt = oldPath.substring(lastSeparator + 1);
+
+      final dotIndex = fileNameWithExt.lastIndexOf('.');
+      final baseName =
+          dotIndex == -1
+              ? fileNameWithExt
+              : fileNameWithExt.substring(0, dotIndex);
+      final newPath = '$directory$baseName.wav';
+
+      if (File(newPath).existsSync()) return newPath;
+      return await AudioDecoder.convertToM4a(oldPath, newPath);
+    } on AudioConversionException catch (e) {
+      print('Decoding failed: $e');
+      return oldPath;
+    }
+  }
+
   Future<bool> getIsMiniPlayerReadyAsync() async => _isMiniPlayerReady;
 
   String _formatDevicesOutput(Set<AudioDevice> devices) {
@@ -737,7 +787,8 @@ class PlayerService with ChangeNotifier {
     for (AudioDevice device in devices) {
       output += '\n\tDevice Name: ${device.name}';
       output += '\n\tDevice Type: ${describeEnum(device.type).capitalize()}';
-      output += '\n\tDevice Direction: '
+      output +=
+          '\n\tDevice Direction: '
           'Input - ${device.isInput ? 'Yes' : 'No'} '
           '| Output - ${device.isOutput ? 'Yes' : 'No'}';
       output += '\n\n';

@@ -13,6 +13,7 @@ import 'package:boombox/directory-component/models/directory_parent_model.dart';
 import 'package:boombox/message-component/models/message_severity_enum.dart';
 import 'package:boombox/message-component/models/notification_model.dart';
 import 'package:boombox/message-component/services/message_service.dart';
+import 'package:boombox/music-component/models/album_model.dart';
 import 'package:flutter/material.dart';
 
 class DirectoryService with ChangeNotifier {
@@ -70,14 +71,18 @@ class DirectoryService with ChangeNotifier {
     } finally {}
   }
 
-  Future<Map<String, int>> getDirectoryListingAsync() async {
+  /// Maps each added directory's display name to its full [DirectoryParent],
+  /// so callers (e.g. the directory listing UI) can inspect the folder
+  /// count as well as the real path - needed to tell whether a directory
+  /// actually lives on an SD card or on internal storage.
+  Future<Map<String, DirectoryParent>> getDirectoryListingAsync() async {
     if (_directories.isEmpty) {
       await _getDirectoryListingAsync();
     }
 
-    Map<String, int> listing = {};
+    Map<String, DirectoryParent> listing = {};
     for (DirectoryParent directory in _directories) {
-      listing.addAll({directory.displayName: directory.folders.length});
+      listing.addAll({directory.displayName: directory});
     }
 
     return listing;
@@ -151,6 +156,7 @@ class DirectoryService with ChangeNotifier {
       DirectoryListing.encode(mappedListing),
     );
     await _saveToStorage();
+    await _invalidateAlbumMappingCacheAsync();
 
     notifyListeners();
     await _sendNotificationAsync();
@@ -168,6 +174,7 @@ class DirectoryService with ChangeNotifier {
         DirectoryParent.encode(_directories),
       );
       await _saveToStorage();
+      await _invalidateAlbumMappingCacheAsync();
       notifyListeners();
       await _sendNotificationAsync();
     } on Exception catch (ex) {
@@ -182,6 +189,10 @@ class DirectoryService with ChangeNotifier {
   }
 
   Future<void> syncDirectoriesAsync() async {
+    // Note: addDirectoriesAsync() invalidates the album mapping cache on
+    // every call, so re-adding each directory below already forces
+    // MusicService to rescan afterwards - no separate invalidation needed
+    // here.
     final List<String> paths = _directories.map((e) => e.path).toList();
     _directories.clear();
     for (String path in paths) {
@@ -189,6 +200,23 @@ class DirectoryService with ChangeNotifier {
     }
 
     await _sendNotificationAsync();
+  }
+
+  /// Invalidates the persisted album mapping cache so [MusicService] is
+  /// forced to perform a fresh filesystem scan the next time the library is
+  /// requested, instead of silently reusing a stale (or even empty) cached
+  /// mapping that no longer reflects the current directory listing.
+  Future<void> _invalidateAlbumMappingCacheAsync() async {
+    await FileStorageService.removeAsync<Album>();
+    await Logger.logAsync(
+      LogEvent<DirectoryService>(
+        severity: Severity.information,
+        tag: Tag.service,
+        line:
+            'Album mapping cache invalidated after directory change; '
+            'MusicService will rescan on next request.',
+      ),
+    );
   }
 
   Future<void> _saveToStorage() async {

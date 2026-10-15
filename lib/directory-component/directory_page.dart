@@ -7,6 +7,7 @@ import 'package:boombox/common/helpers/enums/snackbar_type_enum.dart';
 import 'package:boombox/common/helpers/snackbar_helper.dart';
 import 'package:boombox/common/logger/logger.dart';
 import 'package:boombox/common/logger/models/log_event_model.dart';
+import 'package:boombox/common/services/storage_detection_service.dart';
 import 'package:boombox/common/widgets/appbar.dart';
 import 'package:boombox/common/widgets/circular_progress_indicator.dart';
 import 'package:boombox/common/widgets/trailing_card.dart';
@@ -157,23 +158,33 @@ class _DirectoriesPage extends State<DirectoryPage> {
                               snapshot.data!.entries
                                   .elementAt(index)
                                   .value
+                                  .folders
+                                  .length
                                   .toString(),
                               style: Theme.of(context).textTheme.bodyLarge,
                             ),
                           ),
                           title:
                               Text(snapshot.data!.entries.elementAt(index).key),
-                          subtitle: Text(
-                            'SD Card',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.merge(
-                                  TextStyle(
-                                    color:
-                                        Theme.of(context).colorScheme.secondary,
+                          subtitle: FutureBuilder<bool>(
+                            future: StorageDetectionService.isPathOnSdCardAsync(
+                              snapshot.data!.entries.elementAt(index).value.path,
+                            ),
+                            builder: (context, storageSnapshot) => Text(
+                              (storageSnapshot.data ?? false)
+                                  ? 'SD Card'
+                                  : 'Internal Storage',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.merge(
+                                    TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .secondary,
+                                    ),
                                   ),
-                                ),
+                            ),
                           ),
                           trailing: GestureDetector(
                             onTap: () async => _onRemoveDirectoryPressed(
@@ -187,8 +198,8 @@ class _DirectoriesPage extends State<DirectoryPage> {
                         ),
                         const Divider(
                           thickness: 1,
-                          indent: 16,
-                          endIndent: 16,
+                            indent: 10,
+                            endIndent: 10,
                         ),
                       ],
                     );

@@ -47,7 +47,7 @@ class DarkThemes {
       shape: const CircleBorder(),
       backgroundColor: ThemesCommon.primaryColor,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       clipBehavior: Clip.antiAliasWithSaveLayer,
       elevation: 1,
       shape: const RoundedRectangleBorder(),
@@ -78,7 +78,7 @@ class DarkThemes {
       backgroundColor: ThemesCommon.primaryColor,
     ),
     textButtonTheme: const TextButtonThemeData(),
-    dialogTheme: DialogTheme(
+    dialogTheme: DialogThemeData(
       backgroundColor: ThemesCommon.secondaryColor,
       surfaceTintColor: ThemesCommon.secondaryColor,
       shape: const BeveledRectangleBorder(),

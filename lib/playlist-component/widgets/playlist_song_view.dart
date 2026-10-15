@@ -62,8 +62,8 @@ class _PlaylistSongViewWidget extends State<PlaylistSongViewWidget> {
           ),
           const Divider(
             thickness: 1,
-            indent: 16,
-            endIndent: 16,
+            indent: 10,
+            endIndent: 10,
           ),
         ],
       ),

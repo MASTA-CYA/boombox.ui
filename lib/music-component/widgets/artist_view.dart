@@ -32,31 +32,32 @@ class _ArtistViewWidget extends State<ArtistViewWidget> {
   @override
   Widget build(BuildContext context) {
     images.clear();
-    
+
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
       shrinkWrap: true,
       scrollDirection: Axis.vertical,
       itemCount: widget.artists.length,
-      itemBuilder: (context, index) => Column(
-        children: [
-          ListTile(
-            visualDensity: VisualDensity.comfortable,
-            leading: _buildArtistMedia(widget.artists.elementAt(index).name),
-            title: Text(widget.artists.elementAt(index).name),
-            subtitle: _buildSubtitle(index),
-            onTap: () async => _onArtistSelected(
-                widget.artists.elementAt(index).id,
-                images.elementAt(index),
-                widget.artists.elementAt(index)),
+      itemBuilder:
+          (context, index) => Column(
+            children: [
+              ListTile(
+                visualDensity: VisualDensity.comfortable,
+                leading: _buildArtistMedia(
+                  widget.artists.elementAt(index).name,
+                ),
+                title: Text(widget.artists.elementAt(index).name),
+                subtitle: _buildSubtitle(index),
+                onTap:
+                    () async => _onArtistSelected(
+                      widget.artists.elementAt(index).id,
+                      images.elementAt(index),
+                      widget.artists.elementAt(index),
+                    ),
+              ),
+              const Divider(thickness: 1, indent: 10, endIndent: 10),
+            ],
           ),
-          const Divider(
-            thickness: 1,
-            indent: 16,
-            endIndent: 16,
-          ),
-        ],
-      ),
     );
   }
 
@@ -77,26 +78,28 @@ class _ArtistViewWidget extends State<ArtistViewWidget> {
               height: 120,
               allowUpscaling: false,
             ),
-            loadingBuilder: (context, child, loadingProgress) =>
-                loadingProgress?.cumulativeBytesLoaded ==
-                        loadingProgress?.expectedTotalBytes
-                    ? child
-                    : const ImageIcon(
-                        ResizeImage(
-                          AssetImage('assets/images/artist.png'),
-                          width: 120,
-                          height: 120,
-                          allowUpscaling: false,
+            loadingBuilder:
+                (context, child, loadingProgress) =>
+                    loadingProgress?.cumulativeBytesLoaded ==
+                            loadingProgress?.expectedTotalBytes
+                        ? child
+                        : const ImageIcon(
+                          ResizeImage(
+                            AssetImage('assets/images/artist.png'),
+                            width: 120,
+                            height: 120,
+                            allowUpscaling: false,
+                          ),
                         ),
-                      ),
-            errorBuilder: (context, error, stackTrace) => const ImageIcon(
-              ResizeImage(
-                AssetImage('assets/images/artist.png'),
-                width: 120,
-                height: 120,
-                allowUpscaling: false,
-              ),
-            ),
+            errorBuilder:
+                (context, error, stackTrace) => const ImageIcon(
+                  ResizeImage(
+                    AssetImage('assets/images/artist.png'),
+                    width: 120,
+                    height: 120,
+                    allowUpscaling: false,
+                  ),
+                ),
           );
         } else {
           return const ImageIcon(
@@ -133,8 +136,8 @@ class _ArtistViewWidget extends State<ArtistViewWidget> {
               Text(
                 widget.artists.elementAt(index).albums.toString(),
                 style: Theme.of(context).textTheme.bodyMedium?.merge(
-                      TextStyle(color: Theme.of(context).colorScheme.secondary),
-                    ),
+                  TextStyle(color: Theme.of(context).colorScheme.secondary),
+                ),
               ),
             ],
           ),
@@ -153,8 +156,8 @@ class _ArtistViewWidget extends State<ArtistViewWidget> {
               Text(
                 widget.artists.elementAt(index).tracks.toString(),
                 style: Theme.of(context).textTheme.bodyMedium?.merge(
-                      TextStyle(color: Theme.of(context).colorScheme.secondary),
-                    ),
+                  TextStyle(color: Theme.of(context).colorScheme.secondary),
+                ),
               ),
             ],
           ),

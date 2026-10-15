@@ -3,6 +3,7 @@ import 'dart:typed_data';
 class TrackInfo {
   final Uint8List? art;
   final String? path;
+  final String? tmpPath;
   final String? title;
   final String? artist;
   final String? details;
@@ -17,6 +18,7 @@ class TrackInfo {
   TrackInfo({
     this.art,
     this.path,
+    this.tmpPath,
     this.title,
     this.artist,
     this.details,

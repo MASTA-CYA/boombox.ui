@@ -26,7 +26,7 @@ class _SearchIconWidget extends State<SearchIconWidget>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 50),
     );
     _animation = ColorTween(
       begin: Colors.black,
