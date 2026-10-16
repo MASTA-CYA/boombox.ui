@@ -37,7 +37,7 @@ BoomBox is a Flutter-based local music player for Android, built around playing 
 - **Audio trimming** — trim a track's start/end directly from the player.
 - **Playlists, Favorites, and Recently Played** — the usual library conveniences, each with their own persisted store.
 - **Music news feed** — pulls recent music-industry articles from Billboard.
-- **Missing media lookup** — can search for and download missing album art and metadata for tracks that are otherwise unidentified.
+- **Missing media lookup** — can search for and download missing album art and metadata for tracks that are otherwise unidentified (needs your own API keys — see [Configuration](#configuration)).
 - **Configurable storage** — an auto-detect-with-override storage flag chooses between internal storage and an SD card (where available), and an optional "Eternal Storage" mode keeps app data (settings, cached library, logs) outside app-private storage so it survives an uninstall.
 - **Themes** — switchable light/dark and custom color themes.
 - **Driving mode** — a simplified, less distracting UI mode (in progress).
@@ -89,11 +89,31 @@ Each service is typically a singleton (`factory` constructor returning a shared 
 ```bash
 git clone git@github.com:MASTA-CYA/boombox.ui.git
 cd boombox.ui/boombox
+cp .env.example .env   # then fill in your own keys - see Configuration below
 flutter pub get
 flutter run
 ```
 
 On first launch, BoomBox will ask for storage permissions, then head to **Settings → Media Directories** to pick the folder(s) where your music lives. From there, the library builds itself.
+
+### Configuration
+
+BoomBox needs a couple of third-party API credentials for two optional lookup features. These are **not** checked into the repo — `.env` is git-ignored, and each person running the app keeps their own local copy with their own keys.
+
+1. Copy the template: `cp .env.example .env` (already done above if you followed Setup in order).
+2. Fill in the values in `.env`:
+
+   | Variable | Used for | Where to get it |
+   |---|---|---|
+   | `GOOGLE_SEARCH_API_KEY` | Album/artist art lookup (`MediaArtService`) | [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials). Create an API key, then **restrict it to the Custom Search API only** and (recommended) to your app's package name/SHA-1 under Application restrictions. |
+   | `GOOGLE_SEARCH_CX_KEY` | Paired with the key above | [Programmable Search Engine control panel](https://programmablesearchengine.google.com/controlpanel/all) — create a search engine configured for image search, then copy its Search engine ID (`cx`). |
+   | `DISCOGS_AUTH_TOKEN` | Track genre/artist/bio lookup (`MetaDataService`) | [discogs.com/settings/developers](https://www.discogs.com/settings/developers) → Generate new token. |
+
+3. `.env` is declared as a Flutter asset (see `pubspec.yaml`), so it needs to exist before `flutter run`/`flutter build` will bundle successfully — that's intentional, so a missing config fails fast instead of silently.
+
+If you'd rather skip these, the app still runs fine without them — `.env` can be left with empty values. Missing-media lookup and genre lookup will just quietly fail (logged, not crash) and fall back to "Unknown"/no art, same as if the lookup found nothing.
+
+**Never commit real values for these.** `.env` is git-ignored specifically so this doesn't happen again — see the project history for what it looks like when it does.
 
 ### Storage permissions
 

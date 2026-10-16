@@ -6,6 +6,7 @@ import 'package:boombox/common/logger/logger.dart';
 import 'package:boombox/common/logger/models/log_event_model.dart';
 import 'package:boombox/common/http/services/http_service.dart';
 import 'package:boombox/common/services/shared_preferences_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart';
 import 'dart:convert' as convert;
 
@@ -13,8 +14,13 @@ class MediaArtService {
   late SharedPreferencesService _preferences;
   late Client _client;
 
-  static const String _API_KEY = 'AIzaSyB80DI0uHxbwiSAXMewJZTv5PLx_hG_35I';
-  static const String _CX_KEY = '65350ea0187534cb6';
+  // Loaded from the .env file (see .env.example) rather than hardcoded, so
+  // real keys never end up committed to source control. Falls back to an
+  // empty string if .env wasn't loaded/configured - requests will then fail
+  // fast with a 400 from Google, which is caught below and logged like any
+  // other lookup failure rather than crashing the app.
+  static final String _API_KEY = dotenv.env['GOOGLE_SEARCH_API_KEY'] ?? '';
+  static final String _CX_KEY = dotenv.env['GOOGLE_SEARCH_CX_KEY'] ?? '';
 
   final String _GOOGLE_SEARCH_ENGINE_URL =
       'https://www.googleapis.com/customsearch/v1?key=$_API_KEY&cx=$_CX_KEY&searchType=image&q=';

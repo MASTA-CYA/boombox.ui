@@ -5,6 +5,7 @@ import 'package:boombox/common/logger/logger.dart';
 import 'package:boombox/common/logger/models/log_event_model.dart';
 import 'package:boombox/common/http/services/http_service.dart';
 import 'package:boombox/common/services/shared_preferences_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart';
 import 'dart:convert' as convert;
 
@@ -14,8 +15,13 @@ class MetaDataService {
 
   final String _DISCOGS_SEARCH_URL =
       'https://api.discogs.com/database/search?q=';
+  // Loaded from the .env file (see .env.example) rather than hardcoded, so
+  // the real token never ends up committed to source control. Falls back to
+  // an empty string if .env wasn't loaded/configured - requests will then
+  // fail with an auth error from Discogs, which is caught below and logged
+  // like any other lookup failure rather than crashing the app.
   final String _DISCOGS_AUTH_TOKEN =
-      '&token=EMXaRCBhwflWCpbCLvAkVtPsoAHLtyULtzwYLgwA';
+      '&token=${dotenv.env['DISCOGS_AUTH_TOKEN'] ?? ''}';
 
   static final MetaDataService _instance = MetaDataService._internal();
   // using a factory is important

@@ -11,11 +11,32 @@ import 'package:boombox/services_barrel.dart';
 import 'package:boombox/commons_barrel.dart';
 import 'package:flutter/gestures.dart';
 import 'package:animated_theme_switcher/animated_theme_switcher.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GestureBinding.instance.resamplingEnabled = true;
+
+  // Load API keys/tokens from .env before any service that reads them
+  // (MetaDataService, MediaArtService below) is constructed. See
+  // .env.example / README for setup - this is expected to fail on a fresh
+  // checkout until .env exists, in which case those two services just fall
+  // back to running without art/genre lookups rather than crashing.
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (ex) {
+    await Logger.logAsync(
+      LogEvent<Main>(
+        severity: Severity.error,
+        tag: Tag.application,
+        line:
+            'Could not load .env ($ex). Copy .env.example to .env and fill '
+            'in your own keys to enable album art and genre lookups - see '
+            'README.md. Continuing without them.',
+      ),
+    );
+  }
 
   // Initialize background service
   BackgroundService();
